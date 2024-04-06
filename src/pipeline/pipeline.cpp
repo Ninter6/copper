@@ -7,6 +7,8 @@
 
 #include "pipeline.hpp"
 
+#include <algorithm>
+
 namespace cu {
 
 Rasterizer::Rasterizer(const RasterizerCreateInfo& info)

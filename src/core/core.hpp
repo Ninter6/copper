@@ -10,6 +10,7 @@
 #include <optional>
 #include <vector>
 #include <cstdint>
+#include <cmath>
 
 #include "mathpls.h"
 #include "math_helper.h"

@@ -7,6 +7,8 @@
 
 #include "core.hpp"
 
+#include <cstring>
+
 namespace cu {
 
 ImageR8::ImageR8(Extent size, ColorFeature mode)
