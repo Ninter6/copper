@@ -1,0 +1,3 @@
+[submodule "dep/se_tools"]
+	path = dep/se_tools
+	url = https://github.com/Ninter6/se_tools
