@@ -7,10 +7,12 @@
 
 #pragma once
 
-#include <optional>
+#include <span>
+#include <array>
+#include <memory>
 #include <vector>
 #include <cstdint>
-#include <cmath>
+#include <optional>
 
 #include "mathpls.h"
 #include "math_helper.h"
@@ -20,107 +22,181 @@ namespace cu {
 
 using namespace::mathpls; // directly introducing mathematical libraries
 
+struct Attribute { // NOLINT(*-pro-type-member-init)
+    union {
+        struct {
+            vec3 world_pos;
+            vec3 color;
+            vec3 normal;
+            vec2 uv;
+            float other[5];
+        };
+        float data[16]{};
+    };
+
+    Attribute& operator+=(const Attribute&);
+    Attribute& operator-=(const Attribute&);
+    Attribute operator+(const Attribute&) const;
+    Attribute operator-(const Attribute&) const;
+    Attribute& operator*=(float);
+    Attribute& operator/=(float);
+    Attribute operator*(float) const;
+    Attribute operator/(float) const;
+};
+
 struct Vertex {
-    std::optional<vec3> position;
-    std::optional<vec3> normal;
-    std::optional<vec2> uv;
-    std::optional<vec3> color;
+    vec3 pos{};
+    Attribute attr{};
+
+    void rhw_init() {
+        pos.z = 1.f / pos.z;
+        attr *= pos.z;
+    }
+
+    [[nodiscard]] Attribute get_attr() const {
+        return attr * (1.f / pos.z);
+    }
+
+    Vertex& operator+=(const Vertex&);
+    Vertex& operator-=(const Vertex&);
+    Vertex operator+(const Vertex&) const;
+    Vertex operator-(const Vertex&) const;
+    Vertex& operator*=(float);
+    Vertex& operator/=(float);
+    Vertex operator*(float) const;
+    Vertex operator/(float) const;
 };
 
 struct IndexGroup {
     uint32_t position;
-    uint32_t normal;
-    uint32_t uv;
-    uint32_t color;
+    std::optional<uint32_t> color;
+    std::optional<uint32_t> normal;
+    std::optional<uint32_t> uv;
 };
 
-struct VertexBuffer {
+struct VertexArray {
     std::vector<vec3> positions;
+    std::vector<vec3> colors;
     std::vector<vec3> normals;
     std::vector<vec2> uvs;
-    std::vector<vec3> colors;
-    std::vector<IndexGroup> indices;
-    
-    std::vector<Vertex> getVertices() const;
+
+    [[nodiscard]] Vertex get(const IndexGroup&) const;
+
+    [[nodiscard]] std::vector<Vertex> getVertices(std::span<IndexGroup> indices) const;
+    [[nodiscard]] std::vector<std::array<Vertex, 2>> getLines(std::span<IndexGroup> indices) const;
+    [[nodiscard]] std::vector<std::array<Vertex, 3>> getTriangles(std::span<IndexGroup> indices) const;
 };
 
 struct Image {
     virtual ~Image() = default;
+    [[nodiscard]] virtual Image* clone() const = 0;
     
-    virtual Extent size() const = 0;
-    virtual Color get(uivec2 pos) const = 0;
+    [[nodiscard]] virtual Extent size() const = 0;
+    [[nodiscard]] virtual Color get(uivec2 pos) const = 0;
     virtual void set(uivec2 pos, const Color& color) = 0;
     virtual void clear(const Color& clear_color) = 0;
 };
 
 struct ImageR8 : Image {
-    ImageR8(Extent size, ColorFeature mode = ColorFeature::R);
-    virtual ~ImageR8() override;
+    explicit ImageR8(Extent size, ColorFeature mode = ColorFeature::R);
+    ~ImageR8() override;
+    [[nodiscard]] Image* clone() const override;
+
+    ImageR8(ImageR8&&) = delete;
     
-    virtual Extent size() const override;
-    virtual Color get(uivec2 pos) const override;
-    virtual void set(uivec2 pos, const Color& color) override;
-    virtual void clear(const Color& clear_color) override;
+    [[nodiscard]] Extent size() const override;
+    [[nodiscard]] Color get(uivec2 pos) const override;
+    void set(uivec2 pos, const Color& color) override;
+    void clear(const Color& clear_color) override;
     
     Extent size_;
     uint8_t* data_;
     ColorFeature mode_;
 };
 
-struct ImageRGBA32 : Image {
-    ImageRGBA32(Extent size);
-    virtual ~ImageRGBA32() override;
-    
-    virtual Extent size() const override;
-    virtual Color get(uivec2 pos) const override;
-    virtual void set(uivec2 pos, const Color& color) override;
-    virtual void clear(const Color& clear_color) override;
+struct ImageRGBA8 : Image {
+    explicit ImageRGBA8(Extent size);
+    ~ImageRGBA8() override;
+    [[nodiscard]] Image* clone() const override;
+
+    ImageRGBA8(ImageRGBA8&&) = delete;
+
+    [[nodiscard]] Extent size() const override;
+    [[nodiscard]] Color get(uivec2 pos) const override;
+    void set(uivec2 pos, const Color& color) override;
+    void clear(const Color& clear_color) override;
     
     Extent size_;
-    Color* data_;
+    ColorU32* data_;
 };
 
 struct Sampler {
     virtual ~Sampler() = default;
-    virtual Color get(const Image& image, const vec2& uv) const = 0;
+    [[nodiscard]] virtual Color get(const Image& image, const vec2& uv) const = 0;
 };
 
 struct NearestSampler : Sampler {
-    virtual Color get(const Image& image, const vec2& uv) const override;
+    [[nodiscard]] Color get(const Image& image, const vec2& uv) const override;
 };
 
 struct LinearSampler : Sampler {
-    virtual Color get(const Image& image, const vec2& uv) const override;
+    [[nodiscard]] Color get(const Image& image, const vec2& uv) const override;
 };
 
 struct FrameBuffer {
-    Image* color_image = nullptr;
-    Image* depth_image = nullptr;
+    std::shared_ptr<Image> color_image = nullptr;
+    std::shared_ptr<Image> depth_image = nullptr;
 };
 
 struct Frustum {
-    float near;
-    float fovy;
-    float aspect;
+    Frustum() = default;
+    Frustum(float near, float aspect, float fovy);
 
-    mat4 projMat() const;
+    float near{};
+    float aspect{};
+    float fovy{};
+    mat4 mat{};
 };
 
 struct Camera {
-    Frustum frustum;
+    Camera() = default;
+    Camera(const Frustum& frustum, const vec3& pos);
+
+    Frustum frustum{};
     vec3 position{};
     vec3 forward{0.f, 0.f, -1.f};
     vec3 up{0.f, 1.f, 0.f};
 
-    vec3 toNDC(const vec3& p) const;
-    vec3 toNDC(const vec4& p) const;
-    vec3 toNDC(const vec4& p, const mat4& modelMat) const;
+    [[nodiscard]] mat4 proj_view() const;
+};
+
+struct Viewport {
+    int x, y;
+    int w, h;
+    [[nodiscard]] vec2 translate(const vec2&) const;
 };
 
 enum class Topology {
     point,
     line,
     triangle
+};
+
+enum class CullFace {
+    none,
+    clockwise,
+    anticlockwise,
+    both
+};
+
+struct Texture {
+    Texture() = default;
+    Texture(Image*, Sampler*);
+
+    [[nodiscard]] Color get(const vec2& uv) const;
+
+    Image* image = nullptr;
+    Sampler* sampler = nullptr;
 };
 
 }

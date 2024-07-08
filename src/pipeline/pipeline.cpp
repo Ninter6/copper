@@ -8,281 +8,255 @@
 #include "pipeline.hpp"
 
 #include <algorithm>
+#include <utility>
+
+#include "se_tools.h"
 
 namespace cu {
 
-Rasterizer::Rasterizer(const RasterizerCreateInfo& info)
-: m_viewport(info.viewport) {
-    
+Pipeline::Pipeline(const PipelineInitInfo& info) :
+    camera(info.camera),
+    rasterizer(info.rasterizer),
+    vertexShader(info.vertexShader),
+    fragmentShader(info.fragmentShader),
+    uniform(info.uniform),
+    frame(info.frame),
+    viewport(info.viewport),
+    cullFace(info.cullFace)
+{
+    bind_rasterizer();
 }
 
-void Rasterizer::drawPoint(FrameBuffer* frame, int32_t x, int32_t y, float z) {
-    testAndWrite(frame, {x, y}, z);
+Pipeline::~Pipeline() {
+    unbind_rasterizer();
 }
 
-void Rasterizer::drawPoint(FrameBuffer* frame, const vec3& point) {
-    auto uv = toViewport(point);
-    testAndWrite(frame, uv, point.z);
+void Pipeline::draw_point(const Vertex& point) {
+    auto v = point;
+    call_vertex_shader(v);
+
+    if (!point_frustum_culling(v)) return; // failed
+
+    viewport_transform(v);
+    v.rhw_init();
+
+    fragment_shader_callback(v); // no need to rasterize
 }
 
-void Rasterizer::drawLine(FrameBuffer *frame, int32_t x_begin, int32_t y_begin, int32_t x_end, int32_t y_end, float z_begin, float z_end) {
-    
-    int sx = x_end < x_begin ? -1 : 1;
-    int sy = y_end < y_begin ? -1 : 1;
-    
-    long dx = sx > 0 ? x_end - x_begin : x_begin - x_end;
-    long dy = sy > 0 ? y_end - y_begin : y_begin - y_end;
-    
-    auto x = x_begin;
-    auto y = y_begin;
-    
-    bool steep = dx < dy;
-    
-    uint32_t final_x;
-    if (steep) {
-        final_x = y_end;
-        std::swap(x, y);
-        std::swap(sx, sy);
-        std::swap(dx, dy);
-    } else {
-        final_x = x_end;
-    }
-    
-    long e = -dx;
-    long step = 2 * dy;
-    long desc =-2 * dx;
+// [Cohen–Sutherland algorithm](https://en.wikipedia.org/wiki/Cohen–Sutherland_algorithm)
+std::optional<std::pair<vec2, vec2>>
+line_clip(const vec2 &b, const vec2 &e, const vec2 &min = {-1.f}, const vec2 &max = {1.f}) {
+    constexpr uint8_t INSIDE = 0;
+    constexpr uint8_t LEFT = 1;
+    constexpr uint8_t RIGHT = 2;
+    constexpr uint8_t BOTTOM = 4;
+    constexpr uint8_t TOP = 8;
 
-    float z = z_begin;
-    float sz = (z_end - z_begin) / (dx - 1.f);
-    
-    while (x != final_x) {
-        if (steep)
-            drawPoint(frame, y, x, z);
-        else
-            drawPoint(frame, x, y, z);
-        
-        e += step;
-        if (e >= 0) {
-            y += sy;
-            e += desc;
-        }
-        x += sx;
-        z += sz;
-    }
-}
+    auto out_code = [&](auto &&p) {
+        uint8_t code = INSIDE;
 
-void Rasterizer::drawLine(FrameBuffer* frame, const vec3& begin, const vec3& end) {
-    vec2 b = begin, e = end;
-    float db = begin.z, de = end.z;
-    
-    if (CohenSutherlandLineClip(b, e, -1.f, 1.f)
-//        && !(db < 0 && de < 0)
-//        && !(db > 1 && de > 1)
-        ) {
-        auto vb = toViewport(b);
-        auto ve = toViewport(e);
-        drawLine(frame, vb.x, vb.y, ve.x, ve.y, db, de);
-    }
-}
-
-void Rasterizer::drawTriangleLine(FrameBuffer* frame, const vec3& a, const vec3& b, const vec3& c) {
-    drawLine(frame, a, b);
-    drawLine(frame, b, c);
-    drawLine(frame, c, a);
-}
-
-void Rasterizer::drawTriangle(FrameBuffer* frame, const vec3& a, const vec3& b, const vec3& c) {
-    vec3 v[] = {a, b, c};
-    std::sort(v, v + 3, [](auto&&a, auto&&b) {
-        return a.y < b.y;
-    });
-    ivec2 vs[] = {toViewport(v[0]), toViewport(v[1]), toViewport(v[2])};
-
-    int sx[] = {vs[2].x < vs[0].x ? -1 : 1, vs[1].x < vs[0].x ? -1 : 1, vs[2].x < vs[1].x ? -1 : 1};
-    int sy[] = {vs[2].y < vs[0].y ? -1 : 1, vs[1].y < vs[0].y ? -1 : 1, vs[2].y < vs[1].y ? -1 : 1};
-
-    long dx[] = {
-        sx[0] > 0 ? vs[2].x - vs[0].x : vs[0].x - vs[2].x,
-        sx[1] > 0 ? vs[1].x - vs[0].x : vs[0].x - vs[1].x,
-        sx[2] > 0 ? vs[2].x - vs[1].x : vs[1].x - vs[2].x
-    };
-    long dy[] = {
-        vs[2].y - vs[0].y,
-        vs[1].y - vs[0].y,
-        vs[2].y - vs[1].y
-    };
-
-    bool steep[] = {
-        dx[0] < dy[0],
-        dx[1] < dy[1],
-        dx[2] < dy[2]
-    };
-
-    int32_t x[] = {
-        vs[0].x,
-        vs[0].x,
-        vs[1].x
-    };
-    int32_t y[] = {
-        vs[0].y,
-        vs[0].y,
-        vs[1].y
-    };
-
-    int32_t final_x[3];
-
-    for (uint32_t i = 0; i <3; ++i) {
-        if (steep[i]) {
-            final_x[i] = i == 1 ? vs[1].y : vs[2].y;
-            std::swap(x[i], y[i]);
-            std::swap(sx[i], sy[i]);
-            std::swap(dx[i], dy[i]);
-        } else {
-            final_x[i] = i == 1 ? vs[1].x : vs[2].x;
-        }
-    }
-
-    long e[] = {-dx[0], -dx[1], -dx[2]};
-    long step[] = {2 * dy[0], 2 * dy[1], 2 * dy[2]};
-    long desc[] = {-2 * dx[0], -2 * dx[1], -2 * dx[2]};
-
-    float z[] = {v[0].z, v[0].z, v[1].z};
-    float sz[] = {
-        (v[2].z - v[0].z) / (dx[0] - 1.f),
-        (v[1].z - v[0].z) / (dx[1] - 1.f),
-        (v[2].z - v[1].z) / (dx[2] - 1.f)
-    };
-
-    int g = 1;
-    if (!steep[1] && step[1] <= 0)
-        g = 2;
-    drawLine(frame, v[0], v[1]);
-    drawLine(frame, v[1], v[2]);
-    drawPoint(frame, v[2]);
-
-    while (x[0] != final_x[0]) {
-        if (x[g] == final_x[g])
-            g = 2;
-
-        while ((steep[0] ? x[0] : y[0]) > (steep[g] ? x[g] : y[g]) && x[g] != final_x[g]) {
-            e[g] += step[g];
-            if (e[g] >= 0) {
-                y[g] += sy[g];
-                e[g] += desc[g];
-            }
-            x[g] += sx[g];
-            z[g] += sz[g];
-        }
-
-        if (steep[0]) {
-            if (steep[g]) {
-                drawLine(frame, y[0], x[0], y[g], x[g], z[0], z[g]);
-            } else {
-                drawLine(frame, y[0], x[0], x[g], y[g], z[0], z[g]);
-            }
-        } else {
-            if (steep[g]) {
-                drawLine(frame, x[0], y[0], y[g], x[g], z[0], z[g]);
-            } else {
-                drawLine(frame, x[0], y[0], x[g], y[g], z[0], z[g]);
-            }
-        }
-
-        e[0] += step[0];
-        if (e[0] >= 0) {
-            y[0] += sy[0];
-            e[0] += desc[0];
-        }
-        x[0] += sx[0];
-        z[0] += sz[0];
-    }
-}
-
-ivec2 Rasterizer::toViewport(const vec2& v) {
-    auto u = (v + 1.f) * .5f;
-    return ivec2(u.x * m_viewport.w + m_viewport.x, u.y * m_viewport.h + m_viewport.y);
-}
-
-bool Rasterizer::depthTest(FrameBuffer* frame, uivec2 uv, float depth) {
-    return true;
-}
-
-void Rasterizer::writeFlag(FrameBuffer* frame, uivec2 uv) {
-    frame->color_image->set(uv, {1.f});
-}
-
-void Rasterizer::testAndWrite(FrameBuffer* frame, ivec2 uv, float depth) {
-    auto imageSize = frame->color_image->size();
-    
-    if (uv.x < imageSize.x && uv.x >= 0 &&
-        uv.y < imageSize.y && uv.y >= 0 &&
-        depthTest(frame, uivec2(uv.x, uv.y), depth))
-        writeFlag(frame, uivec2(uv.x, uv.y));
-}
-
-bool Rasterizer::CohenSutherlandLineClip(vec2& p0, vec2& p1, const vec2& min, const vec2& max) {
-    constexpr uint8_t INSIDE = 0; // 0000
-    constexpr uint8_t LEFT = 1;   // 0001
-    constexpr uint8_t RIGHT = 2;  // 0010
-    constexpr uint8_t BOTTOM = 4; // 0100
-    constexpr uint8_t TOP = 8;    // 1000
-    
-    auto ComputeOutCode = [&](vec2& p) {
-        uint8_t code = INSIDE;  // initialised as being inside of clip window
-        
-        if (p.x < min.x)           // to the left of clip window
+        if (p.x < min.x)
             code |= LEFT;
-        else if (p.x > max.x)      // to the right of clip window
+        else if (p.x > max.x)
             code |= RIGHT;
-        if (p.y < min.y)           // below the clip window
+        if (p.y < min.y)
             code |= BOTTOM;
-        else if (p.y > max.y)      // above the clip window
+        else if (p.y > max.y)
             code |= TOP;
-        
+
         return code;
     };
-    
-    uint8_t outcode0 = ComputeOutCode(p0);
-    uint8_t outcode1 = ComputeOutCode(p1);
-    bool accept = false;
+
+    auto p0 = b, p1 = e;
+    auto outcode0 = out_code(p0);
+    auto outcode1 = out_code(p1);
 
     while (true) {
         if (!(outcode0 | outcode1)) {
-            accept = true;
-            break;
+            return {{p0, p1}};
         } else if (outcode0 & outcode1) {
-            break;
+            return std::nullopt;
         } else {
-            vec2 p;
+            float x{}, y{};
+            auto outcodeOut = std::max(outcode0, outcode1);
 
-            int outcodeOut = outcode1 > outcode0 ? outcode1 : outcode0;
-            
-            if (outcodeOut & TOP) {
-                p.x = p0.x + (p1.x - p0.x) * (max.y - p0.y) / (p1.y - p0.y);
-                p.y = max.y;
-            } else if (outcodeOut & BOTTOM) {
-                p.x = p0.x + (p1.x - p0.x) * (min.y - p0.y) / (p1.y - p0.y);
-                p.y = min.y;
+            if (outcodeOut & TOP) {           // point is above the clip window
+                x = p0.x + (p1.x - p0.x) * (max.y - p0.y) / (p1.y - p0.y);
+                y = max.y;
+            } else if (outcodeOut & BOTTOM) { // point is below the clip window
+                x = p0.x + (p1.x - p0.x) * (min.y - p0.y) / (p1.y - p0.y);
+                y = min.y;
             } else if (outcodeOut & RIGHT) {  // point is to the right of clip window
-                p.y = p0.y + (p1.y - p0.y) * (max.x - p0.x) / (p1.x - p0.x);
-                p.x = max.x;
+                y = p0.y + (p1.y - p0.y) * (max.x - p0.x) / (p1.x - p0.x);
+                x = max.x;
             } else if (outcodeOut & LEFT) {   // point is to the left of clip window
-                p.y = p0.y + (p1.y - p0.y) * (min.x - p0.x) / (p1.x - p0.x);
-                p.x = min.x;
+                y = p0.y + (p1.y - p0.y) * (min.x - p0.x) / (p1.x - p0.x);
+                x = min.x;
             }
-            
+
             if (outcodeOut == outcode0) {
-                p0.x = p.x;
-                p0.y = p.y;
-                outcode0 = ComputeOutCode(p0);
+                p0 = {x, y};
+                outcode0 = out_code(p0);
             } else {
-                p1.x = p.x;
-                p1.y = p.y;
-                outcode1 = ComputeOutCode(p1);
+                p1 = {x, y};
+                outcode1 = out_code(p1);
             }
         }
     }
-    return accept;
+}
+
+void Pipeline::draw_line(const std::array<Vertex, 2>& vertices) {
+    auto v = vertices;
+    for (auto&& i : v) {
+        call_vertex_shader(i);
+        i.rhw_init();
+    }
+
+    if (auto clipped = line_clip(v[0].pos, v[1].pos)) {
+        auto&& [a, b] = *clipped;
+        float dy = v[1].pos.y - v[0].pos.y;
+        float eya = a.y - v[0].pos.y;
+        float eyb = b.y - v[0].pos.y;
+        float ta = eya / dy;
+        float tb = eyb / dy;
+        v[0] = lerp(v[0], v[1], ta);
+        v[1] = lerp(v[0], v[1], tb);
+    } else return;
+
+    for (auto&& i : v) viewport_transform(i);
+
+    rasterizer->draw_line(v);
+}
+
+void Pipeline::draw_triangle(const std::array<Vertex, 3>& vertices) {
+    auto v = vertices;
+    for (auto&& i : v) call_vertex_shader(i);
+
+    if (!triangle_frustum_culling(v)) return; // failed
+
+    for (auto&& i : v) viewport_transform(i);
+
+    if (!face_culling(v)) return; // failed
+
+    for (auto&& i : v) i.rhw_init();
+
+    rasterizer->draw_triangle(v, viewport);
+}
+
+
+void Pipeline::draw_indexed_point(const VertexArray& array, std::span<IndexGroup> indices) {
+    for (auto&& i : array.getVertices(indices))
+        draw_point(i);
+}
+
+void Pipeline::draw_indexed_line(const VertexArray& array, std::span<IndexGroup> indices) {
+    for (auto&& i : array.getLines(indices))
+        draw_line(i);
+}
+
+void Pipeline::draw_indexed_triangle(const VertexArray& array, std::span<IndexGroup> indices) {
+    for (auto&& i : array.getTriangles(indices))
+        draw_triangle(i);
+}
+
+void Pipeline::draw_array(const VertexArray& array, std::span<IndexGroup> indices, Topology topo) {
+    switch (topo) {
+        case Topology::point:
+            draw_indexed_point(array, indices);
+            break;
+        case Topology::line:
+            draw_indexed_line(array, indices);
+            break;
+        case Topology::triangle:
+            draw_indexed_triangle(array, indices);
+            break;
+        default:
+            break;
+    }
+}
+
+void Pipeline::set_uniform(std::shared_ptr<Uniform> u) {
+    this->uniform = std::move(u);
+}
+
+void Pipeline::set_camera(std::shared_ptr<Camera> cam) {
+    this->camera = std::move(cam);
+}
+
+void Pipeline::set_rasterizer(std::shared_ptr<Rasterizer> rast) {
+    unbind_rasterizer();
+    this->rasterizer = std::move(rast);
+    bind_rasterizer();
+}
+
+void Pipeline::set_vertex_shader(const VertexShader& vertex_shader) {
+    this->vertexShader = vertex_shader;
+}
+
+void Pipeline::set_fragment_shader(const FragmentShader& fragment_shader) {
+    this->fragmentShader = fragment_shader;
+}
+
+void Pipeline::call_vertex_shader(Vertex& v) {
+    assert(camera && uniform && vertexShader);
+    auto v1 = vertexShader(v, *uniform, *camera);
+    v.pos = {v1.x / v1.w, v1.y / v1.w, v1.z};
+}
+
+bool Pipeline::point_frustum_culling(const Vertex& v) {
+    constexpr float zmax = 1e4f;
+    if (std::abs(v.pos.x) > 1 || std::abs(v.pos.y) > 1 || std::isnan(v.pos.z) || v.pos.z > zmax)
+        return false; // failed
+    return true; // passed
+}
+
+bool Pipeline::triangle_frustum_culling(const std::array<Vertex, 3>& v) {
+    return std::all_of(v.begin(), v.end(), [](auto&&i){
+        return point_frustum_culling(i);
+    });
+}
+
+void Pipeline::viewport_transform(Vertex& v) {
+    auto [x, y] = viewport.translate(v.pos).asArray;
+    v.pos.x = x;
+    v.pos.y = y;
+}
+
+bool Pipeline::face_culling(const std::array<Vertex, 3>& v) {
+    if (cullFace == CullFace::none)
+        return true; // passed
+    if (cullFace == CullFace::both)
+        return false; // failed
+
+    auto n = cross(v[1].pos - v[0].pos, v[2].pos - v[1].pos);
+    auto face = n.z > 0 ? CullFace::anticlockwise : CullFace::clockwise;
+
+    return face != cullFace;
+}
+
+void Pipeline::fragment_shader_callback(const Vertex& v) {
+    assert(camera && uniform && fragmentShader);
+
+    ivec2 pos = vec2{v.pos};
+
+    if (frame.depth_image) {
+        float z = 1.f / v.pos.z;
+        if (frame.depth_image->get(pos).z > z)
+            return; // failed
+    } // depth test
+
+    auto color = fragmentShader(v, *uniform, *camera);
+
+    // write color
+    frame.color_image->set(pos, color);
+}
+
+void Pipeline::bind_rasterizer() {
+    bind_handle = rasterizer->bind_pipline([this](auto&&v){fragment_shader_callback(v);});
+}
+
+void Pipeline::unbind_rasterizer() {
+    rasterizer->unbind_pipeline(bind_handle);
 }
 
 }

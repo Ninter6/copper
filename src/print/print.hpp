@@ -11,71 +11,48 @@
 #include <vector>
 #include <memory>
 
-#include "sethread.h"
+#include "raylib.h"
 
 #include "core.hpp"
 
 namespace cu {
 
-struct CharTable {
-    virtual ~CharTable() = default;
+struct PrinterBase {
+    virtual ~PrinterBase() = default;
     
-    virtual char get(float v) const;
-};
+    virtual void print(const Image& image) const = 0;
+    virtual void clrscr() const = 0;
 
-struct NormCharTable : public CharTable {
-    virtual char get(float v) const override;
-    size_t find(float v) const;
-    NormCharTable& addSlipPoint(float begin, char c);
-    
-    std::vector<std::pair<float, char>> slip_points;
 };
 
 struct PrinterCreateInfo {
     Extent viewport;
     ColorFeature print_mode;
-    CharTable* char_table;
     Sampler* sampler;
+    std::string char_tb = " .,-:^+cfawb%G&$#@";
 };
 
-class Printer {
-public:
+struct Printer : public PrinterBase {
     Printer(const PrinterCreateInfo& info);
-    virtual ~Printer() = default;
-    
-    virtual void print(const Image& image) const;
-    static void clrscr();
+    ~Printer();
 
-    Extent getViewport() const;
-    ColorFeature getPrintMode() const;
-    CharTable* getCharTable() const;
-    Sampler* getSampler() const;
-    
-private:
+    Printer(Printer&&) = delete;
+
+    void print(const Image& image) const override;
+    void clrscr() const override;
+
+    char get_char(const Color& c) const;
+
+    char* m_buffer;
+
     Extent viewport;
     ColorFeature mode;
-    CharTable* char_table;
     Sampler* sampler;
-    
-};
-
-class AsyncPrinter : public Printer {
-public:
-    AsyncPrinter(const PrinterCreateInfo& info, st::ThreadPool* tp);
-    ~AsyncPrinter();
-    
-    virtual void print(const Image& image) const override;
-    
-private:
-    st::ThreadPool* m_tp;
-    void* m_buffer;
-
-    mutable std::atomic_bool m_available = true;
+    std::string char_tb;
 
     void createBuffer();
-    void destroyBuffer();
+    void destroyBuffer() const;
 
-    void printImage(const Image& image) const;
     void writeBuffer(const Image& image) const;
     void printBuffer() const;
 

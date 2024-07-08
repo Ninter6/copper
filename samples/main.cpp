@@ -10,60 +10,79 @@
 #include "print.hpp"
 #include "pipeline.hpp"
 
+#include "ext/gui.hpp"
+
 int main(int argc, const char * argv[]) {
-    cu::ImageR8 image({100, 100});
-    
-    cu::FrameBuffer fb;
-    fb.color_image = &image;
-    
-    cu::Rasterizer rast{{{0, 0, 100, 100}}};
-    
-    cu::CharTable ctable{};
-    cu::LinearSampler spl;
-    
-    cu::PrinterCreateInfo info{
-        {50, 42},
-        cu::ColorFeature::R,
-        &ctable,
-        &spl
+    constexpr cu::Extent ext{800, 500};
+
+    cu::GuiCanvas::init({
+        .window_size = ext,
+        .title = "copper - debug"
+    });
+
+    cu::FrameBuffer fb {
+        .color_image = cu::GuiCanvas::get_canvas(),
+        .depth_image = nullptr
     };
 
-    st::ThreadPool tp{2};
-    cu::AsyncPrinter pr{info, &tp};
+    cu::NearestSampler spl{};
 
-    cu::vec3 vertices[] {
-        {0.f, -1.f, 0.f},
-        {1.f, 1.f, 0.f},
-        {-1.f, 1.f, 0.f}
+    auto cam = std::make_shared<cu::Camera>(
+        cu::Frustum{.1f, (float)ext.x / ext.y, cu::radians(60.f)},
+        cu::vec3{0.f}
+        );
+
+    auto uni = std::make_shared<cu::Uniform>();
+    uni->matrix["model"] = {};
+
+    auto rast = std::make_shared<cu::Rasterizer>();
+
+    auto vs = [](auto&& v, auto&& uni, auto&& cam) -> cu::vec4 {
+        return cam.proj_view() * uni.matrix.at("model") * cu::vec4{v.pos, 1.f};
+    };
+    auto fs = [](auto&& v, auto&& uni, auto&& cam) -> cu::Color {
+        return {v.get_attr().color, 1.f};
     };
 
-    cu::Camera cam {
-        {
-            .5,
-            M_PI / 3,
-            1
-        },
-        {0, 0, 5.f}
+    cu::Pipeline pipe = {{
+        .camera = cam,
+        .rasterizer = rast,
+        .vertexShader = vs,
+        .fragmentShader = fs,
+        .uniform = uni,
+        .frame = fb,
+        .viewport = {0, ext.y, ext.x, -ext.y},
+        .cullFace = cu::CullFace::none
+    }};
+
+    std::array vertices = {
+        cu::vec3{-1.f, 1.f, 0.f},
+        cu::vec3{ 1.f, 1.f, 0.f},
+        cu::vec3{ 0.f,-1.5f, 0.f}
     };
-    
-    for (int i = 0; ; i += 2) {
-        auto t = std::chrono::steady_clock::now();
 
-        cu::vec3 v[3];
-        for (int j = 0; j < 3; j++) {
-            v[j] = cam.toNDC({vertices[j], 1.f}, cu::rotate<float>({0.f, M_PI*i/180, 0.f}, cu::xyz));
-        }
-
-        rast.drawTriangle(&fb, v[0], v[1], v[2]);
-        pr.clrscr();
-        pr.print(image);
-
-        image.clear({});
-        std::this_thread::sleep_until(t + std::chrono::microseconds{100000/6});
+    std::array<cu::Vertex, 3> v;
+    for (int i = 0; i < v.size(); i++) {
+        v[i].pos = vertices[i];
+        v[i].attr.color[i] = 1.f;
     }
 
-//    rast.drawTriangle(&fb, vertices[0] * .5f, vertices[1] * .5f, vertices[2] * .5f);
-//    pr.print(image);
+    [[maybe_unused]] cu::Printer pr{{
+        .viewport = {80, 50},
+        .print_mode = cu::ColorFeature::LUM,
+        .sampler = &spl
+    }};
+
+    int n = 0;
+    while (!cu::GuiCanvas::window_should_close()) {
+        uni->matrix["model"] = cu::translate(cu::vec3{0, 0, -2.f}) * cu::rotate<float>({0, 1.f, 0}, M_PI*n/180.f);
+        pipe.draw_triangle(v);
+
+        cu::GuiCanvas::get_canvas()->show();
+        fb.color_image->clear({.5f, .5f, .5f, 1.f});
+
+        n++;
+    }
 
     return 0;
 }

@@ -1,7 +1,11 @@
-file(GLOB src ./*/*.cpp)
+file(GLOB src ${CMAKE_CURRENT_SOURCE_DIR}/*/*.cpp)
 
-add_library(copper STATIC ${src})
+find_package(raylib REQUIRED)
+
+add_library(copper STATIC ${src}
+        ext/gui.cpp)
 target_include_directories(copper PUBLIC
-    core math pipeline print
+    core math pipeline print ${CMAKE_CURRENT_SOURCE_DIR}
 )
-target_link_libraries(copper PUBLIC se_tools)
+target_link_libraries(copper PUBLIC se_tools raylib)
+#target_compile_options(copper PUBLIC -O3 -march=native)
