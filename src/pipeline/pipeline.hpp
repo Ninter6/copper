@@ -57,6 +57,7 @@ public:
     void draw_indexed_line(const VertexArray& array, std::span<IndexGroup> indices);
     void draw_indexed_triangle(const VertexArray& array, std::span<IndexGroup> indices);
     void draw_array(const VertexArray& array, std::span<IndexGroup> indices, Topology topo);
+    void draw_array(std::span<Vertex> array, Topology topo);
 
     void set_rasterizer(std::shared_ptr<Rasterizer> rasterizer);
     void set_vertex_shader(const VertexShader& vertex_shader);

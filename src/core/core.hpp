@@ -30,7 +30,7 @@ struct Attribute { // NOLINT(*-pro-type-member-init)
             vec3 normal;
             vec2 uv;
             float other[5];
-        };
+        } var;
         float data[16]{};
     };
 

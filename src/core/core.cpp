@@ -85,9 +85,9 @@ Vertex VertexArray::get(const IndexGroup& index) const {
     Vertex v;
     v.pos = positions.at(index.position);
 
-    if (index.color)    v.attr.color = colors.at(*index.color);
-    if (index.normal)   v.attr.color = colors.at(*index.normal);
-    if (index.uv)       v.attr.color = colors.at(*index.uv);
+    if (index.color)    v.attr.var.color = colors.at(*index.color);
+    if (index.normal)   v.attr.var.normal = normals.at(*index.normal);
+    if (index.uv)       v.attr.var.uv = uvs.at(*index.uv);
 
     return v;
 }

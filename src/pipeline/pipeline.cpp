@@ -175,6 +175,25 @@ void Pipeline::draw_array(const VertexArray& array, std::span<IndexGroup> indice
     }
 }
 
+void Pipeline::draw_array(std::span<Vertex> array, Topology topo) {
+    switch (topo) {
+        case Topology::point:
+            for (int i = 0; i < array.size(); i++)
+                draw_point(array[i]);
+            break;
+        case Topology::line:
+            for (int i = 0; i < array.size(); i += 2)
+                draw_line({array[i], array[i + 1]});
+            break;
+        case Topology::triangle:
+            for (int i = 0; i < array.size(); i += 3)
+                draw_triangle({array[i], array[i + 1], array[i + 2]});
+            break;
+        default:
+            break;
+    }
+}
+
 void Pipeline::set_uniform(std::shared_ptr<Uniform> u) {
     this->uniform = std::move(u);
 }
@@ -211,7 +230,7 @@ bool Pipeline::point_frustum_culling(const Vertex& v) {
 }
 
 bool Pipeline::triangle_frustum_culling(const std::array<Vertex, 3>& v) {
-    return std::all_of(v.begin(), v.end(), [](auto&&i){
+    return std::any_of(v.begin(), v.end(), [](auto&&i){
         return point_frustum_culling(i);
     });
 }
@@ -229,7 +248,7 @@ bool Pipeline::face_culling(const std::array<Vertex, 3>& v) {
         return false; // failed
 
     auto n = cross(v[1].pos - v[0].pos, v[2].pos - v[1].pos);
-    auto face = n.z > 0 ? CullFace::anticlockwise : CullFace::clockwise;
+    auto face = n.z < 0 ? CullFace::anticlockwise : CullFace::clockwise;
 
     return face != cullFace;
 }
