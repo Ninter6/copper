@@ -118,12 +118,11 @@ struct Scanline {
 
     // trapezoid2scanline
     Scanline(const Trapezoid &trap, float y) {
-        auto lt = trap.left.y2t(y), rt = trap.right.y2t(y);
-        vertex = lerp(trap.left.A, trap.left.B, lt);
+        vertex = lerp(trap.left.A, trap.left.B, trap.left.y2t(y));
         auto w = trap.right.y2x(y) - trap.left.y2x(y);
         if (w > 0) {
             step = trap.right.A;
-            step = lerp(step, trap.right.B, rt);
+            step = lerp(step, trap.right.B, trap.right.y2t(y));
             step = (step - vertex) * (1.f / w);
             width = (int)ceil(w);
         }

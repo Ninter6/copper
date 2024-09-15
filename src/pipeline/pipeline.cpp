@@ -277,7 +277,7 @@ bool sphere_plane(const std::array<Vertex, 3>& v, float n) {
 
     auto r2n = n*n + 1;
     vec3 cnt;
-    if (a+b > c || abs(a-b) < c) {
+    if (a+b > c && b+c > a && c+a > b) {
         auto d21 = B-A;
         auto d31 = C-A;
         auto f21 = (B.length_squared() - A.length_squared())*.5f;
@@ -286,7 +286,7 @@ bool sphere_plane(const std::array<Vertex, 3>& v, float n) {
         auto m23yz = d21.y*d31.z - d21.z*d31.y;
         auto m23xz = d21.z*d31.x - d21.x*d31.z;
         auto f23y = f31*d21.y - f21*d31.y;
-        auto f23z = f21*d31.z - f31*d21.x;
+        auto f23z = f21*d31.z - f31*d21.z;
         cnt.x = (m23yz * (A.x*m23yz + A.y*m23xz + A.z*m23xy) - m23xy*f23y - m23xz*f23z) / (m23xy*m23xy + m23yz*m23yz + m23xz*m23xz);
         cnt.y = (f23z + m23xz*cnt.x) / m23yz;
         cnt.z = (f23y + m23xy*cnt.x) / m23yz;

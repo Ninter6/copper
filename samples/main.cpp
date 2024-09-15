@@ -91,7 +91,7 @@ int main() {
         .uniform = uni,
         .frame = fb,
         .viewport = {0, ext.y, ext.x, -ext.y},
-        .cullFace = cu::CullFace::anticlockwise
+        .cullFace = cu::CullFace::clockwise
     }};
 
     std::array vertices = {
