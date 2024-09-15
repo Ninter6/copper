@@ -93,7 +93,8 @@ Vertex VertexArray::get(const IndexGroup& index) const {
 }
 
 std::vector<Vertex> VertexArray::getVertices(std::span<IndexGroup> indices) const {
-    std::vector<Vertex> v(indices.size());
+    std::vector<Vertex> v;
+    v.reserve(indices.size());
     for (auto&& i : indices) v.push_back(get(i));
     return v;
 }

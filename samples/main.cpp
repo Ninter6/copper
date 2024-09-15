@@ -69,7 +69,7 @@ int main() {
     auto cam = std::make_shared<cu::Camera>(
         cu::Frustum{.1f, (float)ext.x / ext.y, cu::radians(60.f)},
         cu::vec3{0.f}
-        );
+    );
 
     auto uni = std::make_shared<cu::Uniform>();
     uni->matrix["model"] = {};
@@ -118,6 +118,8 @@ int main() {
     while (!gui->window_should_close()) {
         uni->matrix["model"] = cu::translate(cu::vec3{0, 0, -3.f}) * cu::rotate<float>(cu::EulerAngle{M_PI*n/180, M_PI*n/150, M_PI*n/210}, cu::xyz);
         pipe.draw_array(vai, cu::Topology::triangle);
+
+        cam->position.z = sin(M_PI*n/180)*2.f;
 
         gui->show();
         gui->clear({.5f, .5f, .5f, 1.f});

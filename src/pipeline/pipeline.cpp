@@ -33,10 +33,11 @@ Pipeline::~Pipeline() {
 
 void Pipeline::draw_point(const Vertex& point) {
     auto v = point;
-    call_vertex_shader(v);
 
-    if (!point_frustum_culling(v)) return; // failed
+    auto w = call_vertex_shader(v);
+    if (!point_frustum_culling(v, w)) return; // failed
 
+    perspective_division(v, w);
     viewport_transform(v);
     v.rhw_init();
 
@@ -107,8 +108,12 @@ line_clip(const vec2 &b, const vec2 &e, const vec2 &min = {-1.f}, const vec2 &ma
 
 void Pipeline::draw_line(const std::array<Vertex, 2>& vertices) {
     auto v = vertices;
+    for (auto&& i : v) i.attr.var.other[0] = call_vertex_shader(i);
+
+    if (!line_frustum_culling(v)) return;
+
     for (auto&& i : v) {
-        call_vertex_shader(i);
+        perspective_division(i, i.attr.var.other[0]);
         i.rhw_init();
     }
 
@@ -130,17 +135,25 @@ void Pipeline::draw_line(const std::array<Vertex, 2>& vertices) {
 
 void Pipeline::draw_triangle(const std::array<Vertex, 3>& vertices) {
     auto v = vertices;
-    for (auto&& i : v) call_vertex_shader(i);
+    for (auto&& i : v) i.attr.var.other[0] = call_vertex_shader(i);
 
-    if (!triangle_frustum_culling(v)) return; // failed
+    auto [succ, v2] = triangle_frustum_culling(v);
+    if (!succ) return; // failed
 
-    for (auto&& i : v) viewport_transform(i);
+    auto next = [this](auto&& v) {
+        for (auto&& i : v) {
+            perspective_division(i, i.attr.var.other[0]);
+            viewport_transform(i);
+        }
 
-    if (!face_culling(v)) return; // failed
+        if (!face_culling(v)) return; // failed
 
-    for (auto&& i : v) i.rhw_init();
+        for (auto&& i : v) i.rhw_init();
 
-    rasterizer->draw_triangle(v, viewport);
+        rasterizer->draw_triangle(v, viewport);
+    };
+    next(v);
+    if (v2) next(*v2);
 }
 
 
@@ -178,8 +191,8 @@ void Pipeline::draw_array(const VertexArray& array, std::span<IndexGroup> indice
 void Pipeline::draw_array(std::span<Vertex> array, Topology topo) {
     switch (topo) {
         case Topology::point:
-            for (int i = 0; i < array.size(); i++)
-                draw_point(array[i]);
+            for (const auto& i : array)
+                draw_point(i);
             break;
         case Topology::line:
             for (int i = 0; i < array.size(); i += 2)
@@ -216,32 +229,125 @@ void Pipeline::set_fragment_shader(const FragmentShader& fragment_shader) {
     this->fragmentShader = fragment_shader;
 }
 
-void Pipeline::call_vertex_shader(Vertex& v) {
+float Pipeline::call_vertex_shader(Vertex& v) const {
     assert(camera && uniform && vertexShader);
-    auto v1 = vertexShader(v, *uniform, *camera);
-    v.pos = {v1.x / v1.w, v1.y / v1.w, v1.z};
+    const auto v1 = vertexShader(v, *uniform, *camera);
+    v.pos = {v1.x, v1.y, v1.z};
+    return v1.w;
 }
 
-bool Pipeline::point_frustum_culling(const Vertex& v) {
-    constexpr float zmax = 1e4f;
-    if (std::abs(v.pos.x) > 1 || std::abs(v.pos.y) > 1 || std::isnan(v.pos.z) || v.pos.z > zmax)
-        return false; // failed
+void Pipeline::perspective_division(Vertex& v, float w) {
+    v.pos.x /= w;
+    v.pos.y /= w;
+}
+
+bool Pipeline::point_frustum_culling(const Vertex& p, float w) const {
+    constexpr float zmax = -1e4f;
+    if (p.pos.z >= -camera->frustum.near || p.pos.z < zmax) return false; // failed
+    if (std::abs(p.pos.x) > w || std::abs(p.pos.y) > w) return false; // failed
     return true; // passed
 }
 
-bool Pipeline::triangle_frustum_culling(const std::array<Vertex, 3>& v) {
-    return std::any_of(v.begin(), v.end(), [](auto&&i){
-        return point_frustum_culling(i);
+bool Pipeline::line_frustum_culling(std::array<Vertex, 2>& l) {
+    bool a[2]{};
+    for (int i = 0; i < 2; i++)
+        if (l[i].pos.z < -camera->frustum.near)
+            a[i] = true;
+    if (a[0] && a[1]) return true;
+    if (!a[0] && !a[1]) return false;
+    if (a[1]) cull_line(l[0], l[1]);
+    else cull_line(l[1], l[0]);
+    return true;
+}
+
+void Pipeline::cull_line(Vertex& a, const Vertex& b) {
+    auto t = (a.pos.z + camera->frustum.near) / (a.pos.z - b.pos.z);
+    a *= 1-t;
+    a += b*t;
+}
+
+bool sphere_plane(const std::array<Vertex, 3>& v, float n) {
+    const auto& A = v[0].pos;
+    const auto& B = v[1].pos;
+    const auto& C = v[2].pos;
+
+    auto a = distance_quared(B, C),
+         b = distance_quared(A, C),
+         c = distance_quared(A, B);
+
+    auto r2n = n*n + 1;
+    vec3 cnt;
+    if (a+b > c || abs(a-b) < c) {
+        auto d21 = B-A;
+        auto d31 = C-A;
+        auto f21 = (B.length_squared() - A.length_squared())*.5f;
+        auto f31 = (C.length_squared() - A.length_squared())*.5f;
+        auto m23xy = d21.x*d31.y - d21.y*d31.x;
+        auto m23yz = d21.y*d31.z - d21.z*d31.y;
+        auto m23xz = d21.z*d31.x - d21.x*d31.z;
+        auto f23y = f31*d21.y - f21*d31.y;
+        auto f23z = f21*d31.z - f31*d21.x;
+        cnt.x = (m23yz * (A.x*m23yz + A.y*m23xz + A.z*m23xy) - m23xy*f23y - m23xz*f23z) / (m23xy*m23xy + m23yz*m23yz + m23xz*m23xz);
+        cnt.y = (f23z + m23xz*cnt.x) / m23yz;
+        cnt.z = (f23y + m23xy*cnt.x) / m23yz;
+        r2n *= a*b*c / (4*b*c - (b+c-a)*(b+c-a));
+    } else {
+        auto mx = argsort(vec3{a, b, c})[0];
+        switch (mx) {
+            case 0: cnt = (B+C)*.5f; r2n *= a*.25f; break;
+            case 1: cnt = (A+C)*.5f; r2n *= b*.25f; break;
+            case 2: cnt = (A+B)*.5f; r2n *= c*.25f; break;
+            default: assert(false);
+        }
+    }
+
+    const vec3 pn[] = {
+        { 0,-n,-1},
+        { 0, n,-1},
+        {-n, 0,-1},
+        { n, 0,-1}
+    };
+    return std::all_of(std::begin(pn), std::end(pn), [&](auto&& p) {
+        auto d = dot(p, cnt);
+        return d >= 0 || d*d < r2n;
     });
 }
 
-void Pipeline::viewport_transform(Vertex& v) {
+std::pair<bool, std::optional<std::array<Vertex, 3>>>
+Pipeline::triangle_frustum_culling(std::array<Vertex, 3>& v) {
+    if (!sphere_plane(v, camera->frustum.near))
+        return {false, {}};
+
+    int f = -1, p = -1, s = 0;
+    for (int i = 0; i < 3; i++)
+        if (v[i].pos.z < -camera->frustum.near) {
+            p = i;
+            s++;
+        } else f = i;
+    switch (s) {
+        case 0: return {false, {}};
+        case 1:
+            cull_line(v[(p+1)%3], v[p]);
+            cull_line(v[(p+2)%3], v[p]);
+            return {true, {}};
+        case 2: {
+            auto t = v[f];
+            cull_line(v[f], v[(f+1)%3]);
+            cull_line(t, v[(f+2)%3]);
+            return {true, std::array{t, v[f], v[(f+2)%3]}};
+        }
+        case 3: return {true, {}};
+        default: assert(false);
+    }
+}
+
+void Pipeline::viewport_transform(Vertex& v) const {
     auto [x, y] = viewport.translate(v.pos).asArray;
     v.pos.x = x;
     v.pos.y = y;
 }
 
-bool Pipeline::face_culling(const std::array<Vertex, 3>& v) {
+bool Pipeline::face_culling(const std::array<Vertex, 3>& v) const {
     if (cullFace == CullFace::none)
         return true; // passed
     if (cullFace == CullFace::both)

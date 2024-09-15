@@ -13,6 +13,7 @@
 #include <span>
 #include <array>
 #include <memory>
+#include <bitset>
 #include <unordered_map>
 
 namespace cu {
@@ -81,11 +82,16 @@ private:
 
     RastBindHandle bind_handle{};
 
-    void call_vertex_shader(Vertex& v);
-    static bool point_frustum_culling(const Vertex& v);
-    static bool triangle_frustum_culling(const std::array<Vertex, 3>& v);
-    void viewport_transform(Vertex& v);
-    bool face_culling(const std::array<Vertex, 3>& v);
+    float call_vertex_shader(Vertex& v) const;
+    static void perspective_division(Vertex& v, float w);
+    void viewport_transform(Vertex& v) const;
+    bool face_culling(const std::array<Vertex, 3>& v) const;
+
+    bool point_frustum_culling(const Vertex& v, float w) const;
+    bool line_frustum_culling(std::array<Vertex, 2>& l);
+    void cull_line(Vertex& a, const Vertex& b);
+    std::pair<bool, std::optional<std::array<Vertex, 3>>>
+    triangle_frustum_culling(std::array<Vertex, 3>& v);
 
     void fragment_shader_callback(const Vertex&);
 
