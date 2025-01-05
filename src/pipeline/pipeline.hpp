@@ -30,7 +30,6 @@ using FragmentShader = std::function<Color(const Vertex&, const Uniform&, const 
 struct PipelineInitInfo {
     std::shared_ptr<Camera> camera          = nullptr;
 
-    std::shared_ptr<Rasterizer> rasterizer  = nullptr;
     VertexShader vertexShader               = nullptr;
     FragmentShader fragmentShader           = nullptr;
 
@@ -45,13 +44,12 @@ struct PipelineInitInfo {
 class Pipeline {
 public:
     Pipeline(const PipelineInitInfo& info);
-    ~Pipeline();
+    virtual ~Pipeline() = default;
 
     Pipeline(Pipeline&&) = delete;
 
     void draw_point(const Vertex& point);
     void draw_line(const std::array<Vertex, 2>& vertices);
-
     void draw_triangle(const std::array<Vertex, 3>& vertices);
 
     void draw_indexed_point(const VertexArray& array, std::span<IndexGroup> indices);
@@ -60,16 +58,24 @@ public:
     void draw_array(const VertexArray& array, std::span<IndexGroup> indices, Topology topo);
     void draw_array(std::span<Vertex> array, Topology topo);
 
-    void set_rasterizer(std::shared_ptr<Rasterizer> rasterizer);
     void set_vertex_shader(const VertexShader& vertex_shader);
     void set_fragment_shader(const FragmentShader& fragment_shader);
     void set_camera(std::shared_ptr<Camera> camera);
     void set_uniform(std::shared_ptr<Uniform> uniform);
 
+protected:
+    virtual void fragment_shader_callback(const Vertex&);
+
+    virtual void rast_draw_line(const std::array<Vertex, 2>& vertices);
+    virtual void rast_draw_triangle(const std::array<Vertex, 3>& vertices);
+
+    bool depth_test(ivec2 pos, float z) const;
+    void call_fragment_shader(ivec2 pos, const Vertex& v);
+
 private:
     std::shared_ptr<Camera> camera;
 
-    std::shared_ptr<Rasterizer> rasterizer;
+    Rasterizer rasterizer;
     VertexShader vertexShader;
     FragmentShader fragmentShader;
 
@@ -79,8 +85,6 @@ private:
     Viewport viewport;
 
     CullFace cullFace;
-
-    RastBindHandle bind_handle{};
 
     float call_vertex_shader(Vertex& v) const;
     static void perspective_division(Vertex& v, float w);
@@ -93,10 +97,7 @@ private:
     std::pair<bool, std::optional<std::array<Vertex, 3>>>
     triangle_frustum_culling(std::array<Vertex, 3>& v);
 
-    void fragment_shader_callback(const Vertex&);
-
-    void bind_rasterizer();
-    void unbind_rasterizer();
+    void init_rasterizer();
 };
 
 }

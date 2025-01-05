@@ -24,30 +24,24 @@ cu::VertexArray va {
         cu::vec3{-1, 1,-1},
     },
     .colors = {
-        cu::vec3{ 1, 1, 1},
-        cu::vec3{ 1, 0, 1},
-        cu::vec3{ 1, 0, 0},
-        cu::vec3{ 1, 1, 0},
-        cu::vec3{ 0, 1, 1},
-        cu::vec3{ 0, 0, 1},
-        cu::vec3{ 0, 0, 0},
-        cu::vec3{ 0, 1, 0},
+        cu::vec4{1, 1, 1, 1},
+        cu::vec4{1, 0, 1, 1},
+        cu::vec4{1, 0, 0, 1},
+        cu::vec4{1, 1, 0, 1},
+        cu::vec4{0, 1, 1, 1},
+        cu::vec4{0, 0, 1, 1},
+        cu::vec4{0, 0, 0, 1},
+        cu::vec4{0, 1, 0, 1},
     }
 };
 
 std::vector<cu::IndexGroup> ig = {
-    // 正面（逆时针）
-    {0, 0}, {1, 1}, {3, 3}, {1, 1}, {2, 2}, {3, 3},
-    // 背面（顺时针）
-    {4, 4}, {7, 7}, {5, 5}, {7, 7}, {6, 6}, {5, 5},
-    // 左面（逆时针）
-    {4, 4}, {0, 0}, {7, 7}, {0, 0}, {3, 3}, {7, 7},
-    // 右面（逆时针）
-    {1, 1}, {5, 5}, {2, 2}, {5, 5}, {6, 6}, {2, 2},
-    // 顶面（逆时针）
-    {4, 4}, {5, 5}, {0, 0}, {5, 5}, {1, 1}, {0, 0},
-    // 底面（逆时针）
-    {3, 3}, {2, 2}, {7, 7}, {2, 2}, {6, 6}, {7, 7}
+    {.pos=0, .col=0}, {.pos=1, .col=1}, {.pos=3, .col=3}, {.pos=1, .col=1}, {.pos=2, .col=2}, {.pos=3, .col=3}, // 正面
+    {.pos=4, .col=4}, {.pos=7, .col=7}, {.pos=5, .col=5}, {.pos=7, .col=7}, {.pos=6, .col=6}, {.pos=5, .col=5}, // 背面
+    {.pos=4, .col=4}, {.pos=0, .col=0}, {.pos=7, .col=7}, {.pos=0, .col=0}, {.pos=3, .col=3}, {.pos=7, .col=7}, // 左面
+    {.pos=1, .col=1}, {.pos=5, .col=5}, {.pos=2, .col=2}, {.pos=5, .col=5}, {.pos=6, .col=6}, {.pos=2, .col=2}, // 右面
+    {.pos=4, .col=4}, {.pos=5, .col=5}, {.pos=0, .col=0}, {.pos=5, .col=5}, {.pos=1, .col=1}, {.pos=0, .col=0}, // 顶面
+    {.pos=3, .col=3}, {.pos=2, .col=2}, {.pos=7, .col=7}, {.pos=2, .col=2}, {.pos=6, .col=6}, {.pos=7, .col=7}  // 底面
 };
 
 int main() {
@@ -74,18 +68,15 @@ int main() {
     auto uni = std::make_shared<cu::Uniform>();
     uni->matrix["model"] = {};
 
-    auto rast = std::make_shared<cu::Rasterizer>();
-
     auto vs = [](auto&& v, auto&& uni, auto&& cam) -> cu::vec4 {
         return cam.proj_view() * uni.matrix.at("model") * cu::vec4{v.pos, 1.f};
     };
     auto fs = [](auto&& v, auto&& uni, auto&& cam) -> cu::Color {
-        return {v.get_attr().var.color, 1.f};
+        return v.get_attr().var.color;
     };
 
     cu::Pipeline pipe = {{
         .camera = cam,
-        .rasterizer = rast,
         .vertexShader = vs,
         .fragmentShader = fs,
         .uniform = uni,
@@ -119,7 +110,7 @@ int main() {
         uni->matrix["model"] = cu::translate(cu::vec3{0, 0, -3.f}) * cu::rotate<float>(cu::EulerAngle{M_PI*n/180, M_PI*n/150, M_PI*n/210}, cu::xyz);
         pipe.draw_array(vai, cu::Topology::triangle);
 
-        cam->position.z = sin(M_PI*n/180)*2.f;
+        cam->position.z = sinf(M_PI*n/180)*2.f;
 
         gui->show();
         gui->clear({.5f, .5f, .5f, 1.f});

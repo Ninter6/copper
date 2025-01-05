@@ -114,17 +114,19 @@ std::optional<Trapezoid> trapezoid_clip(const Trapezoid &trap, float ymin, float
 struct Scanline {
     Scanline() = default;
 
-    Scanline(const Vertex &vertex, const Vertex &step, float width) : vertex(vertex), step(step), width(width) {}
+    Scanline(const Vertex &vertex, const Vertex &step, float width)
+    : vertex(vertex), step(step), width((int)ceil(width)) {}
 
     // trapezoid2scanline
     Scanline(const Trapezoid &trap, float y) {
         vertex = lerp(trap.left.A, trap.left.B, trap.left.y2t(y));
-        auto w = trap.right.y2x(y) - trap.left.y2x(y);
-        if (w > 0) {
+        // avoid aliasing
+        vertex.pos.x = floor(vertex.pos.x);
+        width = (int)(ceil(trap.right.y2x(y)) - floor(trap.left.y2x(y)));
+        if (width > 0) {
             step = trap.right.A;
             step = lerp(step, trap.right.B, trap.right.y2t(y));
-            step = (step - vertex) * (1.f / w);
-            width = (int)ceil(w);
+            step = (step - vertex) / (float)width;
         }
     }
 
@@ -140,8 +142,8 @@ struct Scanline {
 
 std::optional<Scanline> scanline_clip(const Scanline &scanline, float xmin, float xmax) {
     auto l = scanline.vertex.pos.x;
-    auto r = l + scanline.width;
-    if (auto w = scanline.width + xmax - xmin - std::max(r, xmax) + std::min(l, xmin); w >= 0) {
+    auto r = l + (float)scanline.width;
+    if (auto w = (float)scanline.width + xmax - xmin - std::max(r, xmax) + std::min(l, xmin); w >= 0) {
         if (l >= xmin) return {{scanline.vertex, scanline.step, w}};
         float e = xmin - l;
         return {{scanline.vertex + scanline.step * e, scanline.step, w}};
@@ -154,8 +156,7 @@ std::optional<Scanline> scanline_clip(const Scanline &scanline, float xmin, floa
 //Rasterizer::Rasterizer(const RasterizerInitInfo&) {}
 
 void Rasterizer::draw_point(const Vertex& v) {
-    for (auto&& callback : callbacks)
-        callback(v);
+    callback(v);
 }
 
 void Rasterizer::draw_line(const std::array<Vertex, 2>& v) {
@@ -185,16 +186,6 @@ void Rasterizer::draw_trapezoid(const algo::Trapezoid& trap, const Viewport& vie
             draw_scanline(scanline, viewport);
         }
     }
-}
-
-RastBindHandle Rasterizer::bind_pipline(const FragmentShaderCallback& callback) {
-    RastBindHandle handle = callbacks.size();
-    callbacks.push_back(callback);
-    return handle;
-}
-
-void Rasterizer::unbind_pipeline(RastBindHandle handle) {
-    callbacks.erase(callbacks.begin() + handle);
 }
 
 }

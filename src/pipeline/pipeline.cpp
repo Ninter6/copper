@@ -16,7 +16,6 @@ namespace cu {
 
 Pipeline::Pipeline(const PipelineInitInfo& info) :
     camera(info.camera),
-    rasterizer(info.rasterizer),
     vertexShader(info.vertexShader),
     fragmentShader(info.fragmentShader),
     uniform(info.uniform),
@@ -24,11 +23,7 @@ Pipeline::Pipeline(const PipelineInitInfo& info) :
     viewport(info.viewport),
     cullFace(info.cullFace)
 {
-    bind_rasterizer();
-}
-
-Pipeline::~Pipeline() {
-    unbind_rasterizer();
+    init_rasterizer();
 }
 
 void Pipeline::draw_point(const Vertex& point) {
@@ -130,7 +125,7 @@ void Pipeline::draw_line(const std::array<Vertex, 2>& vertices) {
 
     for (auto&& i : v) viewport_transform(i);
 
-    rasterizer->draw_line(v);
+    rast_draw_line(v);
 }
 
 void Pipeline::draw_triangle(const std::array<Vertex, 3>& vertices) {
@@ -150,7 +145,7 @@ void Pipeline::draw_triangle(const std::array<Vertex, 3>& vertices) {
 
         for (auto&& i : v) i.rhw_init();
 
-        rasterizer->draw_triangle(v, viewport);
+        rast_draw_triangle(v);
     };
     next(v);
     if (v2) next(*v2);
@@ -213,12 +208,6 @@ void Pipeline::set_uniform(std::shared_ptr<Uniform> u) {
 
 void Pipeline::set_camera(std::shared_ptr<Camera> cam) {
     this->camera = std::move(cam);
-}
-
-void Pipeline::set_rasterizer(std::shared_ptr<Rasterizer> rast) {
-    unbind_rasterizer();
-    this->rasterizer = std::move(rast);
-    bind_rasterizer();
 }
 
 void Pipeline::set_vertex_shader(const VertexShader& vertex_shader) {
@@ -362,26 +351,40 @@ bool Pipeline::face_culling(const std::array<Vertex, 3>& v) const {
 void Pipeline::fragment_shader_callback(const Vertex& v) {
     assert(camera && uniform && fragmentShader);
 
-    ivec2 pos = vec2{v.pos};
+    ivec2 pos = {(int)v.pos.x, (int)round(v.pos.y)}; // effectively avoid aliasing
 
-    if (frame.depth_image) {
-        float z = 1.f / v.pos.z;
-        if (frame.depth_image->get(pos).z > z)
-            return; // failed
-    } // depth test
+    if (depth_test(pos, v.pos.z))
+        call_fragment_shader(pos, v);
+}
 
+bool Pipeline::depth_test(ivec2 pos, float z) const {
+    if (!frame.depth_image) return true;
+
+    float depth = 1.f / z;
+    if (frame.depth_image->get(pos).z > depth)
+        return false; // failed
+
+    frame.depth_image->set(pos, depth); // passed
+    return true; // passed
+}
+
+void Pipeline::call_fragment_shader(ivec2 pos, const Vertex& v) {
     auto color = fragmentShader(v, *uniform, *camera);
 
     // write color
     frame.color_image->set(pos, color);
 }
 
-void Pipeline::bind_rasterizer() {
-    bind_handle = rasterizer->bind_pipline([this](auto&&v){fragment_shader_callback(v);});
+void Pipeline::rast_draw_line(const std::array<Vertex, 2>& v) {
+    rasterizer.draw_line(v);
 }
 
-void Pipeline::unbind_rasterizer() {
-    rasterizer->unbind_pipeline(bind_handle);
+void Pipeline::rast_draw_triangle(const std::array<Vertex, 3>& v) {
+    rasterizer.draw_triangle(v, viewport);
+}
+
+void Pipeline::init_rasterizer() {
+    rasterizer.callback = [this](auto&&v){fragment_shader_callback(v);};
 }
 
 }

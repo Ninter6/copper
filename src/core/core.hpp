@@ -16,33 +16,12 @@
 
 #include "mathpls.h"
 #include "math_helper.h"
+#include "calcu.hpp"
 #include "tools.hpp"
 
 namespace cu {
 
 using namespace::mathpls; // directly introducing mathematical libraries
-
-struct Attribute { // NOLINT(*-pro-type-member-init)
-    union {
-        struct {
-            vec3 world_pos;
-            vec3 color;
-            vec3 normal;
-            vec2 uv;
-            float other[5];
-        } var;
-        float data[16]{};
-    };
-
-    Attribute& operator+=(const Attribute&);
-    Attribute& operator-=(const Attribute&);
-    Attribute operator+(const Attribute&) const;
-    Attribute operator-(const Attribute&) const;
-    Attribute& operator*=(float);
-    Attribute& operator/=(float);
-    Attribute operator*(float) const;
-    Attribute operator/(float) const;
-};
 
 struct Vertex {
     vec3 pos{};
@@ -68,17 +47,17 @@ struct Vertex {
 };
 
 struct IndexGroup {
-    uint32_t position;
-    std::optional<uint32_t> color;
-    std::optional<uint32_t> normal;
+    uint32_t pos;
+    std::optional<uint32_t> nor;
     std::optional<uint32_t> uv;
+    std::optional<uint32_t> col;
 };
 
 struct VertexArray {
     std::vector<vec3> positions;
-    std::vector<vec3> colors;
     std::vector<vec3> normals;
     std::vector<vec2> uvs;
+    std::vector<vec4> colors;
 
     [[nodiscard]] Vertex get(const IndexGroup&) const;
 

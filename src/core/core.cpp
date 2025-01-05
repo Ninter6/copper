@@ -13,40 +13,6 @@
 
 namespace cu {
 
-Attribute& Attribute::operator+=(const Attribute& o) {
-    for (int i = 0; i < std::size(data); i++)
-        data[i] += o.data[i];
-    return *this;
-}
-Attribute Attribute::operator+(const Attribute& o) const {
-    auto r = *this;
-    return r += o;
-}
-Attribute& Attribute::operator-=(const Attribute& o) {
-    for (int i = 0; i < std::size(data); i++)
-        data[i] -= o.data[i];
-    return *this;
-}
-Attribute Attribute::operator-(const Attribute& o) const {
-    auto r = *this;
-    return r -= o;
-}
-Attribute& Attribute::operator*=(float k) {
-    for (auto&& i : data)
-        i *= k;
-    return *this;
-}
-Attribute Attribute::operator*(float k) const {
-    auto r = *this;
-    return r *= k;
-}
-Attribute& Attribute::operator/=(float k) {
-    return *this *= (1.f / k);
-}
-Attribute Attribute::operator/(float k) const {
-    return *this * (1.f / k);
-}
-
 Vertex& Vertex::operator+=(const Vertex& o) {
     pos += o.pos;
     attr += o.attr;
@@ -83,11 +49,11 @@ Vertex Vertex::operator/(float k) const {
 
 Vertex VertexArray::get(const IndexGroup& index) const {
     Vertex v;
-    v.pos = positions.at(index.position);
+    v.pos = positions.at(index.pos);
 
-    if (index.color)    v.attr.var.color = colors.at(*index.color);
-    if (index.normal)   v.attr.var.normal = normals.at(*index.normal);
+    if (index.nor) v.attr.var.normal = normals.at(*index.nor);
     if (index.uv)       v.attr.var.uv = uvs.at(*index.uv);
+    if (index.col) v.attr.var.color = colors.at(*index.col);
 
     return v;
 }
@@ -133,16 +99,16 @@ Extent ImageR8::size() const {
 }
 
 vec4 ImageR8::get(uivec2 pos) const {
-    return vec4(*(data_ + pos.x + pos.y * size_.x) / 255.f, 0, 0, 0);
+    return {(float)*(data_ + pos.x + pos.y * size_.x) / 255.f, 0, 0, 0};
 }
 
 void ImageR8::set(uivec2 pos, const Color& color) {
     *(data_ + pos.x + pos.y * size_.x) =
-        std::clamp(GetColorFeatureValue(color, mode_), 0.f, 1.f) * 255;
+        static_cast<uint8_t>(std::clamp(GetColorFeatureValue(color, mode_), 0.f, 1.f) * 255);
 }
 
 void ImageR8::clear(const Color& clear_color) {
-    int c = std::clamp(GetColorFeatureValue(clear_color, mode_), 0.f, 1.f) * 255;
+    int c = static_cast<int>(std::clamp(GetColorFeatureValue(clear_color, mode_), 0.f, 1.f) * 255);
     std::memset(data_, c, size_.x * size_.y);
 }
 
@@ -181,16 +147,16 @@ void ImageRGBA8::clear(const Color& clear_color) {
 Color NearestSampler::get(const Image &image, const vec2 &uv) const {
     auto ext = image.size() - 1;
     return image.get({
-        static_cast<unsigned int>(std::round(uv.x * ext.x)),
-        static_cast<unsigned int>(std::round(uv.y * ext.y))
+        static_cast<unsigned>(std::round(uv.x * (float)ext.x)),
+        static_cast<unsigned>(std::round(uv.y * (float)ext.y))
     });
 }
 
 Color LinearSampler::get(const Image &image, const vec2 &uv) const {
     auto ext = image.size() - 1;
     
-    auto x = ext.x * uv.x;
-    auto y = ext.y * uv.y;
+    auto x = (float)ext.x * uv.x;
+    auto y = (float)ext.y * uv.y;
     
     uint32_t lx = std::floor(x), ux = std::ceil(x);
     uint32_t ly = std::floor(y), uy = std::ceil(y);
@@ -232,8 +198,8 @@ mat4 Camera::proj_view() const {
 }
 
 vec2 Viewport::translate(const vec2& v) const {
-    return {(x + (v.x + 1.f) * .5f * (w - 1.f)),
-            (y + (v.y + 1.f) * .5f * (h - 1.f))};
+    return {((float)x + (v.x + 1.f) * .5f * ((float)w - 1.f)),
+            ((float)y + (v.y + 1.f) * .5f * ((float)h - 1.f))};
 }
 
 Texture::Texture(Image* image, Sampler* sampler) : image(image), sampler(sampler) {}

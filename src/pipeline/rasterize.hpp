@@ -17,8 +17,6 @@ struct Trapezoid;
 
 }
 
-using RastBindHandle = uint32_t;
-
 using FragmentShaderCallback = std::function<void(const Vertex&)>;
 
 struct RasterizerInitInfo {};
@@ -36,10 +34,7 @@ public:
 
 private:
 
-    RastBindHandle bind_pipline(const FragmentShaderCallback& callback);
-    void unbind_pipeline(RastBindHandle handle);
-
-    std::vector<FragmentShaderCallback> callbacks;
+    FragmentShaderCallback callback;
 
     friend class Pipeline;
 };
