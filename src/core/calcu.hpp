@@ -6,9 +6,16 @@
 
 #include "mathpls.h"
 
+#if defined(__i386__) || defined(__x86_64__)
+#   define CU_ENABLED_SIMD
+#   include <immintrin.h>
+#endif
+
 namespace cu {
 
 using namespace mathpls;
+
+constexpr size_t attr_data_size = 16;
 
 struct Attribute { // NOLINT(*-pro-type-member-init)
     union {
@@ -19,7 +26,11 @@ struct Attribute { // NOLINT(*-pro-type-member-init)
             vec4 color;
             vec4 other;
         } var;
-        float data[16]{};
+        float data[attr_data_size]{};
+
+#ifdef CU_ENABLED_SIMD
+        __m128 mm_data[4];
+#endif
     };
 
     Attribute& operator+=(const Attribute&);
