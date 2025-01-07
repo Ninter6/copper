@@ -8,4 +8,4 @@ target_include_directories(copper PUBLIC
     core math pipeline print ${CMAKE_CURRENT_SOURCE_DIR}
 )
 target_link_libraries(copper PUBLIC se_tools raylib)
-#target_compile_options(copper PUBLIC -O3 -march=native)
+target_compile_options(copper PUBLIC -O3 -march=native)

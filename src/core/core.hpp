@@ -61,9 +61,9 @@ struct VertexArray {
 
     [[nodiscard]] Vertex get(const IndexGroup&) const;
 
-    [[nodiscard]] std::vector<Vertex> getVertices(std::span<IndexGroup> indices) const;
-    [[nodiscard]] std::vector<std::array<Vertex, 2>> getLines(std::span<IndexGroup> indices) const;
-    [[nodiscard]] std::vector<std::array<Vertex, 3>> getTriangles(std::span<IndexGroup> indices) const;
+    [[nodiscard]] std::vector<Vertex> getVertices(std::span<const IndexGroup> indices) const;
+    [[nodiscard]] std::vector<std::array<Vertex, 2>> getLines(std::span<const IndexGroup> indices) const;
+    [[nodiscard]] std::vector<std::array<Vertex, 3>> getTriangles(std::span<const IndexGroup> indices) const;
 };
 
 struct Image {
@@ -158,7 +158,9 @@ struct Viewport {
 enum class Topology {
     point,
     line,
-    triangle
+    triangle,
+    triangle_fan,
+    triangle_line,
 };
 
 enum class CullFace {

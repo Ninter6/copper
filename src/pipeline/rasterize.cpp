@@ -103,6 +103,7 @@ std::array<std::optional<Trapezoid>, 2> triangle2trapezoid(std::array<Vertex, 3>
 
 std::optional<Trapezoid> trapezoid_clip(const Trapezoid &trap, float ymin, float ymax) {
     if (ymin > ymax) std::swap(ymin, ymax);
+    ymax -= .501f; // avoid out of range
     if (trap.bottom > ymax || trap.top < ymin)
         return std::nullopt;
     auto rst = trap;
@@ -115,7 +116,7 @@ struct Scanline {
     Scanline() = default;
 
     Scanline(const Vertex &vertex, const Vertex &step, float width)
-    : vertex(vertex), step(step), width((int)ceil(width)) {}
+    : vertex(vertex), step(step), width((int)round(width)) {}
 
     // trapezoid2scanline
     Scanline(const Trapezoid &trap, float y) {
@@ -131,8 +132,8 @@ struct Scanline {
     }
 
     std::optional<Vertex> advance() {
-        if (width-- <= 0) return std::nullopt;
-        return (vertex += step);
+        if (width <= 0) return std::nullopt;
+        return --width, (vertex += step);
     }
 
     Vertex vertex{}; // left vertex
@@ -141,6 +142,8 @@ struct Scanline {
 };
 
 std::optional<Scanline> scanline_clip(const Scanline &scanline, float xmin, float xmax) {
+    if (xmin > xmax) std::swap(xmin, xmax);
+    xmax -= .501f;
     auto l = scanline.vertex.pos.x;
     auto r = l + (float)scanline.width;
     if (auto w = (float)scanline.width + xmax - xmin - std::max(r, xmax) + std::min(l, xmin); w >= 0) {

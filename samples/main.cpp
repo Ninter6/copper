@@ -8,7 +8,7 @@
 #include <iostream>
  
 #include "print.hpp"
-#include "pipeline.hpp"
+#include "async.hpp"
 
 #include "ext/gui.hpp"
 
@@ -71,18 +71,22 @@ int main() {
     auto vs = [](auto&& v, auto&& uni, auto&& cam) -> cu::vec4 {
         return cam.proj_view() * uni.matrix.at("model") * cu::vec4{v.pos, 1.f};
     };
-    auto fs = [](auto&& v, auto&& uni, auto&& cam) -> cu::Color {
-        return v.get_attr().var.color;
+    auto fs = [](auto&& v, auto&& uni, auto&& cam) -> std::optional<cu::Color> {
+        auto color = v.get_attr().var.color;
+        color.a = .5f;
+        return color;
     };
 
-    cu::Pipeline pipe = {{
+    st::ThreadPool tp{3};
+    cu::AsyncPipeline pipe = {&tp, {
         .camera = cam,
         .vertexShader = vs,
         .fragmentShader = fs,
         .uniform = uni,
         .frame = fb,
         .viewport = {0, ext.y, ext.x, -ext.y},
-        .cullFace = cu::CullFace::clockwise
+        .cullFace = cu::CullFace::clockwise,
+        .enable_blend = true
     }};
 
     std::array vertices = {
@@ -109,6 +113,7 @@ int main() {
     while (!gui->window_should_close()) {
         uni->matrix["model"] = cu::translate(cu::vec3{0, 0, -3.f}) * cu::rotate<float>(cu::EulerAngle{M_PI*n/180, M_PI*n/150, M_PI*n/210}, cu::xyz);
         pipe.draw_array(vai, cu::Topology::triangle);
+        pipe.finish();
 
         cam->position.z = sinf(M_PI*n/180)*2.f;
 

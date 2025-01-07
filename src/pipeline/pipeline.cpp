@@ -21,7 +21,12 @@ Pipeline::Pipeline(const PipelineInitInfo& info) :
     uniform(info.uniform),
     frame(info.frame),
     viewport(info.viewport),
-    cullFace(info.cullFace)
+    cullFace(info.cullFace),
+    enableDepthTest(info.enable_depth_test),
+    enableDepthWrite(info.enable_depth_write),
+    depthFunc(info.depth_func),
+    enableBlend(info.enable_blend),
+    blendFunc(info.blend_func)
 {
     init_rasterizer();
 }
@@ -151,23 +156,28 @@ void Pipeline::draw_triangle(const std::array<Vertex, 3>& vertices) {
     if (v2) next(*v2);
 }
 
+void Pipeline::draw_triangle_line(const std::array<Vertex, 3>& v) {
+    draw_line({v[0], v[1]});
+    draw_line({v[1], v[2]});
+    draw_line({v[2], v[0]});
+}
 
-void Pipeline::draw_indexed_point(const VertexArray& array, std::span<IndexGroup> indices) {
+void Pipeline::draw_indexed_point(const VertexArray& array, std::span<const IndexGroup> indices) {
     for (auto&& i : array.getVertices(indices))
         draw_point(i);
 }
 
-void Pipeline::draw_indexed_line(const VertexArray& array, std::span<IndexGroup> indices) {
+void Pipeline::draw_indexed_line(const VertexArray& array, std::span<const IndexGroup> indices) {
     for (auto&& i : array.getLines(indices))
         draw_line(i);
 }
 
-void Pipeline::draw_indexed_triangle(const VertexArray& array, std::span<IndexGroup> indices) {
+void Pipeline::draw_indexed_triangle(const VertexArray& array, std::span<const IndexGroup> indices) {
     for (auto&& i : array.getTriangles(indices))
         draw_triangle(i);
 }
 
-void Pipeline::draw_array(const VertexArray& array, std::span<IndexGroup> indices, Topology topo) {
+void Pipeline::draw_array(const VertexArray& array, std::span<const IndexGroup> indices, Topology topo) {
     switch (topo) {
         case Topology::point:
             draw_indexed_point(array, indices);
@@ -179,23 +189,32 @@ void Pipeline::draw_array(const VertexArray& array, std::span<IndexGroup> indice
             draw_indexed_triangle(array, indices);
             break;
         default:
+            draw_array(array.getVertices(indices), topo);
             break;
     }
 }
 
-void Pipeline::draw_array(std::span<Vertex> array, Topology topo) {
+void Pipeline::draw_array(std::span<const Vertex> array, Topology topo) {
     switch (topo) {
         case Topology::point:
             for (const auto& i : array)
                 draw_point(i);
             break;
         case Topology::line:
-            for (int i = 0; i < array.size(); i += 2)
-                draw_line({array[i], array[i + 1]});
+            for (int i = 1; i < array.size(); i += 2)
+                draw_line({array[i - 1], array[i]});
             break;
         case Topology::triangle:
-            for (int i = 0; i < array.size(); i += 3)
-                draw_triangle({array[i], array[i + 1], array[i + 2]});
+            for (int i = 2; i < array.size(); i += 3)
+                draw_triangle({array[i - 2], array[i - 1], array[i]});
+            break;
+        case Topology::triangle_fan:
+            for (int i = 2; i < array.size(); i += 3)
+                draw_triangle({array[0], array[i - 1], array[i]});
+            break;
+        case Topology::triangle_line:
+            for (int i = 2; i < array.size(); i += 3)
+                draw_triangle_line({array[i - 2], array[i - 1], array[i]});
             break;
         default:
             break;
@@ -216,6 +235,30 @@ void Pipeline::set_vertex_shader(const VertexShader& vertex_shader) {
 
 void Pipeline::set_fragment_shader(const FragmentShader& fragment_shader) {
     this->fragmentShader = fragment_shader;
+}
+
+void Pipeline::set_cull_face(CullFace face) {
+    cullFace = face;
+}
+
+void Pipeline::set_depth_test(bool enable) {
+    enableBlend = enable;
+}
+
+void Pipeline::set_depth_write(bool enable) {
+    enableDepthWrite = enable;
+}
+
+void Pipeline::set_depth_func(const DepthFunc& func) {
+    depthFunc = func;
+}
+
+void Pipeline::set_blend(bool enable) {
+    enableBlend = enable;
+}
+
+void Pipeline::set_blend_func(const BlendFunc& func) {
+    blendFunc = func;
 }
 
 float Pipeline::call_vertex_shader(Vertex& v) const {
@@ -357,22 +400,56 @@ void Pipeline::fragment_shader_callback(const Vertex& v) {
         call_fragment_shader(pos, v);
 }
 
-bool Pipeline::depth_test(ivec2 pos, float z) const {
-    if (!frame.depth_image) return true;
+bool Pipeline::depth_test(ivec2 pos, float z) {
+    if (!depth_test_enabled())
+        return true; // haven't been enabled
 
     float depth = 1.f / z;
-    if (frame.depth_image->get(pos).z > depth)
+    if (check_depth(pos, depth))
         return false; // failed
 
-    frame.depth_image->set(pos, depth); // passed
+    if (depth_write_enabled())
+        write_depth(pos, depth);
     return true; // passed
 }
 
 void Pipeline::call_fragment_shader(ivec2 pos, const Vertex& v) {
+    // nullopt if the fragment was discarded
     auto color = fragmentShader(v, *uniform, *camera);
 
     // write color
+    if (color) {
+        // blend
+        if (enableBlend && blendFunc)
+            blend_color(pos, *color);
+
+        set_color(pos, *color);
+    }
+}
+
+void Pipeline::blend_color(ivec2 pos, Color& color) {
+    color = blendFunc(frame.color_image->get(pos), color);
+}
+
+void Pipeline::set_color(ivec2 pos, const Color& color) {
     frame.color_image->set(pos, color);
+}
+
+bool Pipeline::depth_test_enabled() const {
+    return enableDepthTest && frame.depth_image;
+}
+
+bool Pipeline::depth_write_enabled() const {
+    return enableDepthWrite;
+}
+
+
+bool Pipeline::check_depth(ivec2 pos, float z) const {
+    return depthFunc(z, frame.depth_image->get(pos).z);
+}
+
+void Pipeline::write_depth(ivec2 pos, float z) const {
+    frame.depth_image->set(pos, z);
 }
 
 void Pipeline::rast_draw_line(const std::array<Vertex, 2>& v) {

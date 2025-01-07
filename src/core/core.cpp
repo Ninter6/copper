@@ -58,21 +58,21 @@ Vertex VertexArray::get(const IndexGroup& index) const {
     return v;
 }
 
-std::vector<Vertex> VertexArray::getVertices(std::span<IndexGroup> indices) const {
+std::vector<Vertex> VertexArray::getVertices(std::span<const IndexGroup> indices) const {
     std::vector<Vertex> v;
     v.reserve(indices.size());
     for (auto&& i : indices) v.push_back(get(i));
     return v;
 }
 
-std::vector<std::array<Vertex, 2>> VertexArray::getLines(std::span<IndexGroup> indices) const {
+std::vector<std::array<Vertex, 2>> VertexArray::getLines(std::span<const IndexGroup> indices) const {
     std::vector<std::array<Vertex, 2>> v(indices.size() / 2);
     for (size_t i = 0; i < indices.size(); i += 2)
         v.push_back({get(indices[i]), get(indices[i+1])});
     return v;
 }
 
-std::vector<std::array<Vertex, 3>> VertexArray::getTriangles(std::span<IndexGroup> indices) const {
+std::vector<std::array<Vertex, 3>> VertexArray::getTriangles(std::span<const IndexGroup> indices) const {
     std::vector<std::array<Vertex, 3>> v(indices.size() / 3);
     for (size_t i = 0; i < indices.size(); i += 3)
         v.push_back({get(indices[i]), get(indices[i+1]), get(indices[i+2])});

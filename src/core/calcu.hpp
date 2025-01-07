@@ -29,7 +29,8 @@ struct Attribute { // NOLINT(*-pro-type-member-init)
         float data[attr_data_size]{};
 
 #ifdef CU_ENABLED_SIMD
-        __m128 mm_data[4];
+        static_assert(attr_data_size % 4 == 0);
+        __m128 mm_data[attr_data_size / 4];
 #endif
     };
 
