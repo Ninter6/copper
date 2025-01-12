@@ -175,6 +175,7 @@ struct Texture {
     Texture(Image*, Sampler*);
 
     [[nodiscard]] Color get(const vec2& uv) const;
+    [[nodiscard]] Color fetch(const uivec2& pos) const;
 
     Image* image = nullptr;
     Sampler* sampler = nullptr;

@@ -102,8 +102,6 @@ std::array<std::optional<Trapezoid>, 2> triangle2trapezoid(std::array<Vertex, 3>
 }
 
 std::optional<Trapezoid> trapezoid_clip(const Trapezoid &trap, float ymin, float ymax) {
-    if (ymin > ymax) std::swap(ymin, ymax);
-    ymax -= .501f; // avoid out of range
     if (trap.bottom > ymax || trap.top < ymin)
         return std::nullopt;
     auto rst = trap;
@@ -121,19 +119,16 @@ struct Scanline {
     // trapezoid2scanline
     Scanline(const Trapezoid &trap, float y) {
         vertex = lerp(trap.left.A, trap.left.B, trap.left.y2t(y));
-        // avoid aliasing
-        vertex.pos.x = floor(vertex.pos.x);
-        width = (int)(ceil(trap.right.y2x(y)) - floor(trap.left.y2x(y)));
-        if (width > 0) {
-            step = trap.right.A;
-            step = lerp(step, trap.right.B, trap.right.y2t(y));
-            step = (step - vertex) / (float)width;
-        }
+        vertex.pos.x = round(vertex.pos.x), vertex.pos.y = y;
+        step = lerp(trap.right.A, trap.right.B, trap.right.y2t(y));
+        step.pos.x = round(step.pos.x), step.pos.y = y;
+        width = (int)step.pos.x - (int)vertex.pos.x;
+        if (width > 0) step = (step - vertex) / (float)width;
     }
 
     std::optional<Vertex> advance() {
-        if (width <= 0) return std::nullopt;
-        return --width, (vertex += step);
+        if (--width < 0) return std::nullopt;
+        return (vertex += step);
     }
 
     Vertex vertex{}; // left vertex
@@ -142,8 +137,6 @@ struct Scanline {
 };
 
 std::optional<Scanline> scanline_clip(const Scanline &scanline, float xmin, float xmax) {
-    if (xmin > xmax) std::swap(xmin, xmax);
-    xmax -= .501f;
     auto l = scanline.vertex.pos.x;
     auto r = l + (float)scanline.width;
     if (auto w = (float)scanline.width + xmax - xmin - std::max(r, xmax) + std::min(l, xmin); w >= 0) {
@@ -177,15 +170,19 @@ void Rasterizer::draw_triangle(const std::array<Vertex, 3>& v, const Viewport& v
 }
 
 void Rasterizer::draw_scanline(const algo::Scanline& scanline, const Viewport& viewport) {
-    if (auto clipped = algo::scanline_clip(scanline, (float)viewport.x, (float)(viewport.x + viewport.w)))
+    auto xmin = (float)viewport.x, xmax = (float)(viewport.x + viewport.w);
+    if (xmin > xmax) std::swap(xmin, xmax);
+    if (auto clipped = algo::scanline_clip(scanline, xmin - 1, xmax - 1)) // it offers (min, max], but we want [min, max)
         while (auto v = clipped->advance())
             draw_point(*v);
 }
 
 void Rasterizer::draw_trapezoid(const algo::Trapezoid& trap, const Viewport& viewport) {
-    if (auto clipped = algo::trapezoid_clip(trap, (float)viewport.y, (float)(viewport.y + viewport.h))) {
-        for (float y = clipped->bottom; y <= clipped->top; ++y) {
-            auto scanline = algo::Scanline(*clipped, y);
+    auto ymin = (float)viewport.y, ymax = (float)(viewport.y + viewport.h);
+    if (ymin > ymax) std::swap(ymin, ymax);
+    if (auto clipped = algo::trapezoid_clip(trap, ymin, ymax)) {
+        for (int y = ceil(clipped->bottom), end = ceil(clipped->top); y < end; ++y) {
+            auto scanline = algo::Scanline(*clipped, (float)y);
             draw_scanline(scanline, viewport);
         }
     }

@@ -140,8 +140,8 @@ void ImageRGBA8::set(uivec2 pos, const Color& color) {
 }
 
 void ImageRGBA8::clear(const Color& clear_color) {
-    auto c = (uint32_t)ColorU32(clear_color);
-    std::memset(data_, std::bit_cast<int>(c), size_.x * size_.y * sizeof(ColorU32));
+    auto c = ColorU32(clear_color);
+    std::uninitialized_fill_n(data_, size_.x * size_.y, c);
 }
 
 Color NearestSampler::get(const Image &image, const vec2 &uv) const {
@@ -207,6 +207,11 @@ Texture::Texture(Image* image, Sampler* sampler) : image(image), sampler(sampler
 Color Texture::get(const vec2& uv) const {
     assert(image && sampler);
     return sampler->get(*image, uv);
+}
+
+Color Texture::fetch(const uivec2& pos) const {
+    assert(image);
+    return image->get(pos);
 }
 
 }

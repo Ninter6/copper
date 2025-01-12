@@ -17,6 +17,7 @@ class AsyncPipeline : public Pipeline {
 
 public:
     AsyncPipeline(st::ThreadPool* tp, const PipelineInitInfo& info);
+    ~AsyncPipeline() override;
 
     void draw_point(const Vertex& point) override;
     void draw_line(const std::array<Vertex, 2>& vertices) override;

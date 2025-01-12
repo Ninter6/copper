@@ -14,6 +14,10 @@ thread_local std::vector<std::pair<ivec2, Color>> AsyncPipeline::col_buf{};
 AsyncPipeline::AsyncPipeline(st::ThreadPool* tp, const PipelineInitInfo& info)
     : Pipeline(info), tp(tp) {}
 
+AsyncPipeline::~AsyncPipeline() {
+    finish();
+}
+
 st::ThreadPool& AsyncPipeline::tp_or_assert() const {
     return assert(tp), *tp;
 }

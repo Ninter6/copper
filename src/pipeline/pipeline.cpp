@@ -394,7 +394,7 @@ bool Pipeline::face_culling(const std::array<Vertex, 3>& v) const {
 void Pipeline::fragment_shader_callback(const Vertex& v) {
     assert(camera && uniform && fragmentShader);
 
-    ivec2 pos = {(int)v.pos.x, (int)round(v.pos.y)}; // effectively avoid aliasing
+    ivec2 pos = {(int)v.pos.x, (int)v.pos.y};
 
     if (depth_test(pos, v.pos.z))
         call_fragment_shader(pos, v);

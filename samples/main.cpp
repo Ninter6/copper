@@ -6,11 +6,15 @@
 //
 
 #include <iostream>
+#include <numeric>
  
 #include "print.hpp"
 #include "async.hpp"
+#include "ascii.hpp"
 
-#include "ext/gui.hpp"
+#ifdef COPPER_INCLUDE_EXT
+#   include "ext/gui.hpp"
+#endif
 
 cu::VertexArray va {
     .positions = {
@@ -47,18 +51,21 @@ std::vector<cu::IndexGroup> ig = {
 int main() {
     constexpr cu::Extent ext{800, 500};
 
-    cu::GuiCanvas::init({
-        .window_size = ext,
-        .title = "copper - debug"
-    });
-    auto gui = cu::GuiCanvas::get_canvas();
+//    std::ios::sync_with_stdio(false);
+
+//    cu::GuiCanvas::init({
+//        .window_size = ext,
+//        .title = "copper - debug"
+//    });
+//    auto gui = cu::GuiCanvas::get_canvas();
 
     cu::FrameBuffer fb {
-        .color_image = gui,
+        .color_image = std::make_shared<cu::ImageRGBA8>(ext),
         .depth_image = nullptr
     };
 
     cu::NearestSampler spl{};
+    cu::Texture tex{fb.color_image.get(), &spl};
 
     auto cam = std::make_shared<cu::Camera>(
         cu::Frustum{.1f, (float)ext.x / ext.y, cu::radians(60.f)},
@@ -74,18 +81,21 @@ int main() {
     auto fs = [](auto&& v, auto&& uni, auto&& cam) -> std::optional<cu::Color> {
         auto color = v.get_attr().var.color;
         color.a = .5f;
+        cu::vec3 pos = color;
+        pos = pos * 2 - 1;
+        if (pos.length_squared() > 1.64f)
+            return std::nullopt;
         return color;
     };
 
-    st::ThreadPool tp{3};
-    cu::AsyncPipeline pipe = {&tp, {
+    cu::Pipeline pipe = {{
         .camera = cam,
         .vertexShader = vs,
         .fragmentShader = fs,
         .uniform = uni,
         .frame = fb,
         .viewport = {0, ext.y, ext.x, -ext.y},
-        .cullFace = cu::CullFace::clockwise,
+        .cullFace = cu::CullFace::none,
         .enable_blend = true
     }};
 
@@ -101,24 +111,31 @@ int main() {
         v[i].attr.var.color[i] = 1.f;
     }
 
-    [[maybe_unused]] cu::Printer pr{{
-        .viewport = {80, 50},
-        .print_mode = cu::ColorFeature::LUM,
-        .sampler = &spl
-    }};
-
     auto vai = va.getVertices(ig);
 
+    cu::Extent term_ext{160, 50};
+    [[maybe_unused]] cu::Printer pr{term_ext};
+
+    cu::AsciiFactory ascii;
+    ascii.set_noise_enable(true);
+
     int n = 0;
-    while (!gui->window_should_close()) {
+    while (n < INT_MAX) {
+        auto f = cu::FLatch{std::chrono::milliseconds{16}};
+
         uni->matrix["model"] = cu::translate(cu::vec3{0, 0, -3.f}) * cu::rotate<float>(cu::EulerAngle{M_PI*n/180, M_PI*n/150, M_PI*n/210}, cu::xyz);
         pipe.draw_array(vai, cu::Topology::triangle);
-        pipe.finish();
+//        pipe.finish();
 
         cam->position.z = sinf(M_PI*n/180)*2.f;
 
-        gui->show();
-        gui->clear({.5f, .5f, .5f, 1.f});
+        pr << ascii.process(tex, pr.viewport);
+
+        fb.color_image->clear({.5f, .5f, .5f, 1.f});
+        pr.clear();
+
+//        gui->show();
+//        gui->clear({.5f, .5f, .5f, 1.f});
 
         n++;
     }
