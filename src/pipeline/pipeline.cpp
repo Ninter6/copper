@@ -312,16 +312,20 @@ bool sphere_plane(const std::array<Vertex, 3>& v, float n) {
     if (a+b > c && b+c > a && c+a > b) {
         auto d21 = B-A;
         auto d31 = C-A;
-        auto f21 = (B.length_squared() - A.length_squared())*.5f;
-        auto f31 = (C.length_squared() - A.length_squared())*.5f;
         auto m23xy = d21.x*d31.y - d21.y*d31.x;
         auto m23yz = d21.y*d31.z - d21.z*d31.y;
         auto m23xz = d21.z*d31.x - d21.x*d31.z;
-        auto f23y = f31*d21.y - f21*d31.y;
-        auto f23z = f21*d31.z - f31*d21.z;
-        cnt.x = (m23yz * (A.x*m23yz + A.y*m23xz + A.z*m23xy) - m23xy*f23y - m23xz*f23z) / (m23xy*m23xy + m23yz*m23yz + m23xz*m23xz);
-        cnt.y = (f23z + m23xz*cnt.x) / m23yz;
-        cnt.z = (f23y + m23xy*cnt.x) / m23yz;
+        if (m23yz*m23yz < 1e-7f)
+            cnt = (A+B+C)/3.f;
+        else {
+            auto f21 = (B.length_squared() - A.length_squared())*.5f;
+            auto f31 = (C.length_squared() - A.length_squared())*.5f;
+            auto f23y = f31*d21.y - f21*d31.y;
+            auto f23z = f21*d31.z - f31*d21.z;
+            cnt.x = (m23yz * (A.x*m23yz + A.y*m23xz + A.z*m23xy) - m23xy*f23y - m23xz*f23z) / (m23xy*m23xy + m23yz*m23yz + m23xz*m23xz);
+            cnt.y = (f23z + m23xz*cnt.x) / m23yz;
+            cnt.z = (f23y + m23xy*cnt.x) / m23yz;
+        }
         r2n *= a*b*c / (4*b*c - (b+c-a)*(b+c-a));
     } else {
         auto mx = argsort(vec3{a, b, c})[0];
